@@ -33,8 +33,6 @@ package as3dataobject
 	
 	public class DataObject
 	{
-		private var __variables:Object;
-		
 		/**
 		 * map "property"=>"function(obj)"
 		 * used to maintain relations between objects in the model
@@ -45,66 +43,24 @@ package as3dataobject
 		
 		public var id:String;
 		
-		private static var _classVariables:Object = { };
-		
 		public function DataObject(_import:Object = null)
 		{
 			__relations ||= { };
 			__arrayRelations ||= { };
-			
-			// get saved declaration of the class
-			var className:String = getQualifiedClassName(this);
-			__variables = _classVariables[className];
-			
-			if (!__variables) // first object of that class is created
-			{
-				___test();
-				__variables = _classVariables[className] = __createVariables();
-			}
 			
 			if (_import)
 				update(_import);
 		}
 		public function update(_import:Object):void
 		{
-			if (!_import)
-				return;
-			
-			for (var name:* in _import)
-			{
-				copyProp(name, _import);
-			}
-			for (name in __variables)
-			{
-				// is readable
-				if (name in __variables && __variables[name].indexOf("r") != -1)
-				// and is included in import
-					if (_import.hasOwnProperty(name))
-						copyProp(name, _import);
-			}
-		}
-		private function copyProp(name:String, _import:Object):void
-		{
-			// not writeable
-			if (name in __variables && (__variables[name].indexOf("w") == -1))
-				return;
-			
-			// already have one
-			if (this[name] === _import[name])
-				return;
-			
-			if (name in __relations)
-				this[name] = __relations[name](DataObject.id(_import[name]));
-			else if (name in __arrayRelations)
-				this[name] = blessArray(_import[name], __arrayRelations[name]);
-			else
-				this[name] = _import[name];
+			PropertyCopy.copy(this, _import, __relations, __arrayRelations);
 		}
 		public function export():Object
 		{
 			var obj:Object = {};
 			
 			// class members
+			var __variables:Object = PropertyCopy.getVariables(this);
 			for (var item:* in __variables)
 			{
 				if (__variables[item].indexOf("r") != -1)
@@ -118,7 +74,7 @@ package as3dataobject
 			for (name in __relations)
 			{
 				if (obj[name])
-					obj[name] = obj[name]["id"]
+					obj[name] = getId(obj[name]);
 			}
 			for (name in __arrayRelations)
 			{
@@ -127,6 +83,10 @@ package as3dataobject
 			}
 			return obj;
 		}
+		/**
+		 * Clones this object.
+		 * Override to customize behavior or improve performance.
+		 */
 		public function clone():DataObject
 		{
 			return new (getDefinitionByName(getQualifiedClassName(this)))(this);
@@ -137,71 +97,13 @@ package as3dataobject
 			return JSON.stringify(export());
 		}*/
 		
-		private function __createVariables():Object
+		private static function getId(obj:Object):int
 		{
-			// partially based on JSONEncoder by Adobe.
-			
-			var variables:Object = {};
-			
-			
-			var classInfo:XML = describeType( this );
-			for each ( var v:XML in classInfo..*.(name() == "variable" || (name() == "accessor")))
-			{
-				// Issue #110 - If [Transient] metadata exists, then we should skip
-				if ( v.metadata && v.metadata.( @name == "Transient" ).length() > 0 )
-				{
-					continue;
-				}
-				var access:String = v.attribute("access");
-				if (v.name() == "accessor")
-				{
-					variables[v.@name] = "";
-					// Make sure accessors are readable
-					if (access.charAt( 0 ) == "r")
-					{
-						variables[v.@name] += "r";
-					}
-					// Make sure accessors are writeable
-					if (access.charAt( 0 ) == "w" || access.charAt( 4 ) == "w")
-					{
-						variables[v.@name] += "w";
-					}
-				}
-				else
-					variables[v.@name] = "rw";
-			}
-			
-			return variables;
-		}
-		
-		private static function blessArray(array:Array, bless:Function):Array
-		{
-			if (!array)
-				return array;
-			
-			array = array.slice();
-			
-			if (!array.length)
-				return array;
-			
-			for (var i:int = 0; i < array.length; i++)
-			{
-				array[i] = bless(array[i]);
-			}
-			return array;
+			return obj["id"];
 		}
 		private static function unblessArray(array:Array):Array
 		{
-			array = array.slice();
-			
-			if (!array || !array.length)
-				return array;
-			
-			for (var i:int = 0; i < array.length; i++)
-			{
-				array[i] = array[i]["id"];
-			}
-			return array;
+			return PropertyCopy.blessArray(array, getId);
 		}
 		// safely make minimal object from id
 		public static function id(data:*):*
@@ -209,26 +111,34 @@ package as3dataobject
 			if (data == null)
 				return null; // DataObject.id(null) == null
 			
-			if (typeof(data) == "number")
-				return { id:data };
+			switch(typeof(data))
+			{
+				case "number":
+				case "string":
+					return { id:data };
+				default:
+					return data;
+			}
+				
 			
 			return data;
 		}
-		public static function entity(data:*, map:Object, defaultClass:Class, onUpdate:String = null /*unused*/):*
+		public static function entity(data:*, map:Object, defaultClass:Class):*
 		{
 			if (data == null)
 				return null; // DataObject.user(null) == null
 			
-			if (typeof(data) == "number")
+			var t:String = typeof(data);
+			if (t == "number" || t == "string")
 			{
 				// we don't need to update anything
-				return map[int(data)];
+				return map[data];
 			}
 			else
 			{
 				// get id
-				var id:int = data["id"];
-				if (id > 0)
+				var id:String = data["id"];
+				if (id)
 				{
 					var _entity:DataObject = map[id];
 					if (_entity)
@@ -244,8 +154,17 @@ package as3dataobject
 					}
 					return _entity;
 				}
+				else
+				{
+					return new defaultClass(data);
+				}
 			}
 			return null;
+		}
+		public static function justGet(data:*, map:Object, defaultClass:Class):*
+		{
+			var id:String = id(data)["id"];
+			return id ? map[id] : null;
 		}
 		public static function remove(data:*, map:Object):void
 		{
