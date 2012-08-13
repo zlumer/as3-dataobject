@@ -48,9 +48,9 @@ package as3dataobject
 			for (var name:String in variables)
 			{
 				// is writeable
-				if (name in variables && variables[name].indexOf("w") != -1)
+				if (variables[name].indexOf("w") != -1)
 				// and is included in import
-					if (from.hasOwnProperty(name))
+					if (from.hasOwnProperty(name) && from[name] !== to[name])
 						if (name in relations)
 							// apply relationship
 							to[name] = relations[name](from[name]);
