@@ -53,7 +53,10 @@ package as3dataobject
 					if (from.hasOwnProperty(name) && from[name] !== to[name])
 						if (name in relations)
 							// apply relationship
-							to[name] = relations[name](from[name]);
+							if (relations[name] is Class)
+								to[name] = new (relations[name])(from[name]);
+							else
+								to[name] = relations[name](from[name]);
 						else if (name in arrayRelations)
 							// apply one-to-many relationship[
 							to[name] = blessArray(from[name], arrayRelations[name]);
