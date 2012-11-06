@@ -73,7 +73,7 @@ package as3dataobject
 			}
 			for (name in __relations)
 			{
-				if (obj[name])
+				if (obj[name] && (obj[name] is DataObject))
 					obj[name] = getId(obj[name]);
 			}
 			for (name in __arrayRelations)
